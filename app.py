@@ -33,10 +33,12 @@ if st.button("Ejecutar"):
             res_gpt = f"Error GPT: {e}"
 
         # Gemini
-        try:
-            res_gem = model_gemini.generate_content(p).text
-        except Exception as e:
-            res_gem = f"Error Gemini: {e}"
+try:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    # Probamos con el nombre técnico más estándar
+    model_gemini = genai.GenerativeModel('gemini-1.5-flash-latest') 
+except Exception as e:
+    st.error(f"Error al configurar Gemini: {e}")
 
         results.append({
             "Pregunta": p,
