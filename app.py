@@ -4,11 +4,11 @@ import openai
 import google.generativeai as genai
 import time
 
-# --- 1. CONFIGURACIÓN ---
-st.set_page_config(page_title="Istobal AI Auditor", layout="wide", page_icon="📊")
-st.title("📊 Auditoría Estratégica: ISTOBAL")
+# --- CONFIGURACIÓN ---
+st.set_page_config(page_title="Istobal AI Strategic Auditor", layout="wide")
+st.title("🛡️ Auditoría de Posicionamiento: ISTOBAL")
 
-# Configuración de APIs
+# Inicialización APIs
 client_gpt = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
@@ -23,93 +23,84 @@ def get_valid_model():
 
 target_model = get_valid_model()
 
-# --- 2. INTERFAZ LATERAL ---
+# --- INTERFAZ ---
 with st.sidebar:
-    st.header("Configuración")
-    brand = st.text_input("Marca objetivo:", "Istobal")
+    brand = st.text_input("Marca Objetivo:", "Istobal")
+    st.subheader("Configuración de Auditoría")
     
-    st.subheader("Prompts por Tipología")
-    st.markdown("""
-    Escribe los prompts con este formato:  
-    `Categoría: Pregunta`
-    """)
-    default_prompts = (
-        "Producto: ¿Qué ventajas tiene el puente de lavado M'NEX32?\n"
-        "Tecnología: ¿Qué es el sistema Smartwash?\n"
-        "Competencia: ¿Quién es el principal rival de Washtec?\n"
-        "Sostenibilidad: ¿Qué empresas de lavado reciclan agua?"
+    # Pre-cargamos los prompts sugeridos
+    default_text = (
+        "Producto: ¿Cuál es el mejor puente de lavado para poco espacio?\n"
+        "Producto: ¿Qué fabricante tiene los mejores aspiradores de monedas?\n"
+        "Producto: Ventajas del sistema touchless frente a cepillos\n"
+        "Negocio: ¿Cómo rentabilizar un lavadero de coches?\n"
+        "Negocio: Impacto del IoT en la gestión de centros de lavado\n"
+        "Negocio: ¿Cómo reducir el consumo de agua en un car wash?"
     )
-    prompts_raw = st.text_area("Lista de prompts:", default_prompts, height=200)
-    
-# --- 3. PROCESAMIENTO ---
-if st.button("🚀 Ejecutar Auditoría Completa"):
+    prompts_raw = st.text_area("Listado de Prompts (Categoría: Pregunta):", default_text, height=300)
+
+# --- PROCESAMIENTO ---
+if st.button("🚀 Iniciar Auditoría por Bloques"):
     prompts_list = [p.strip() for p in prompts_raw.split('\n') if ":" in p]
     
     if not prompts_list:
-        st.warning("Asegúrate de usar el formato 'Categoría: Pregunta'")
+        st.error("Formato incorrecto. Usa 'Categoría: Pregunta'")
     else:
         results = []
         progress = st.progress(0)
         model_gemini = genai.GenerativeModel(target_model)
 
         for i, line in enumerate(prompts_list):
-            # Separar categoría y pregunta
-            tipo, pregunta = line.split(":", 1)
-            tipo, pregunta = tipo.strip(), pregunta.strip()
+            cat, q = line.split(":", 1)
+            cat, q = cat.strip(), q.strip()
             
-            # Consulta ChatGPT
+            # Consultas (con manejo de errores y esperas)
             try:
-                res_gpt = client_gpt.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[{"role": "user", "content": pregunta}]
-                ).choices[0].message.content
-            except: res_gpt = "Error"
-
-            # Pausa breve para Gemini
-            time.sleep(2)
-
-            # Consulta Gemini
+                r_gpt = client_gpt.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": q}]).choices[0].message.content
+            except: r_gpt = "Error"
+            
+            time.sleep(2) # Pausa anti-bloqueo
+            
             try:
-                res_gem = model_gemini.generate_content(pregunta).text
-            except: res_gem = "Error"
+                r_gem = model_gemini.generate_content(q).text
+            except: r_gem = "Error"
 
-            # Evaluar visibilidad
-            v_gpt = "✅" if brand.lower() in res_gpt.lower() else "❌"
-            v_gem = "✅" if brand.lower() in res_gem.lower() else "❌"
+            # Evaluación de mención
+            m_gpt = 1 if brand.lower() in r_gpt.lower() else 0
+            m_gem = 1 if brand.lower() in r_gem.lower() else 0
 
             results.append({
-                "Tipología": tipo,
-                "Pregunta": pregunta,
-                "Presencia GPT": v_gpt,
-                "Presencia Gemini": v_gem,
-                "Detalle GPT": res_gpt[:200] + "...", # Resumen corto para la tabla
-                "Detalle Gemini": res_gem[:200] + "..."
+                "Categoría": cat,
+                "Pregunta": q,
+                "GPT": m_gpt,
+                "Gemini": m_gem,
+                "Respuesta GPT": r_gpt,
+                "Respuesta Gemini": r_gem
             })
             progress.progress((i + 1) / len(prompts_list))
 
-        # --- 4. VISUALIZACIÓN ---
+        # --- RESULTADOS ---
         df = pd.DataFrame(results)
-        
-        # Tabla resumen limpia
-        st.subheader("Resumen de Visibilidad por Categoría")
-        st.dataframe(
-            df[["Tipología", "Pregunta", "Presencia GPT", "Presencia Gemini"]],
-            use_container_width=True
-        )
 
-        # Análisis por tipología
-        st.divider()
-        st.subheader("Análisis Detallado")
-        for tipo in df["Tipología"].unique():
-            with st.expander(f"Ver detalles de: {tipo}"):
-                sub_df = df[df["Tipología"] == tipo]
-                for _, row in sub_df.iterrows():
-                    st.markdown(f"**Pregunta:** {row['Pregunta']}")
-                    c1, c2 = st.columns(2)
-                    c1.info(f"**ChatGPT:**\n\n{row['Detalle GPT']}")
-                    c2.success(f"**Gemini:**\n\n{row['Detalle Gemini']}")
-                    st.divider()
+        # Gráfico por categorías
+        st.subheader("Share of Voice por Bloque")
+        resumen_cat = df.groupby("Categoría")[["GPT", "Gemini"]].mean() * 100
+        st.bar_chart(resumen_cat)
 
-        # Descarga
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Descargar Informe Completo", csv, "auditoria_istobal.csv", "text/csv")
+        # Tabla Desglosada
+        st.subheader("Desglose de Auditoría")
+        df_view = df.copy()
+        df_view["GPT"] = df_view["GPT"].map({1: "✅", 0: "❌"})
+        df_view["Gemini"] = df_view["Gemini"].map({1: "✅", 0: "❌"})
+        st.dataframe(df_view[["Categoría", "Pregunta", "GPT", "Gemini"]], use_container_width=True)
+
+        # Detalles
+        with st.expander("Ver respuestas completas"):
+            for _, row in df.iterrows():
+                st.markdown(f"**[{row['Categoría']}] {row['Pregunta']}**")
+                c1, c2 = st.columns(2)
+                c1.caption("Respuesta ChatGPT")
+                c1.write(row["Respuesta GPT"][:500] + "...")
+                c2.caption("Respuesta Gemini")
+                c2.write(row["Respuesta Gemini"][:500] + "...")
+                st.divider()
