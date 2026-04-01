@@ -18,6 +18,11 @@ try:
     genai.configure(api_key=GEMINI_API_KEY)
     model_gemini = genai.GenerativeModel('gemini-pro') 
     client_openai = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+try:
+    res_gem = model_gemini.generate_content(p).text
+except Exception as e:
+    res_gem = f"Error técnico: {str(e)}"
     
 except Exception as e:
     st.error("⚠️ Error: No se han encontrado las API Keys en 'Secrets'. Por favor, añádelas en el panel de Streamlit.")
