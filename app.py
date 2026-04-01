@@ -14,7 +14,7 @@ if "OPENAI_API_KEY" not in st.secrets or "GEMINI_API_KEY" not in st.secrets:
 # 2. Inicializar clientes
 client_openai = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model_gemini = genai.GenerativeModel('gemini-1.5-flash')
+model_gemini = genai.GenerativeModel('models/gemini-1.5-flash')
 
 # 3. Interfaz
 brand = st.sidebar.text_input("Marca:", "Istobal")
