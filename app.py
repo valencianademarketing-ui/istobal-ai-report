@@ -4,75 +4,57 @@ import openai
 import google.generativeai as genai
 import time
 
-# --- 1. CONFIGURACIÓN ---
 st.set_page_config(page_title="Istobal AI Auditor", layout="wide")
 st.title("📊 Monitor de Visibilidad IA: ISTOBAL")
 
-# --- 2. SEGURIDAD Y LLAVES ---
-if "OPENAI_API_KEY" not in st.secrets or "GEMINI_API_KEY" not in st.secrets:
-    st.error("⚠️ Configura OPENAI_API_KEY y GEMINI_API_KEY en los Secrets de Streamlit.")
-    st.stop()
-
-# Inicializar OpenAI
+# Configuración rápida
 client_gpt = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-
-# Inicializar Google
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
-# --- 3. FUNCIÓN DE AUTODETECCIÓN (Evita el Error 404) ---
-@st.cache_resource
-def get_working_model():
-    try:
-        # Listamos los modelos que tu llave REALMENTE puede usar
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # Prioridad de modelos para Istobal
-        prioridades = ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]
-        
-        for p in prioridades:
-            if p in available_models:
-                return p
-        
-        # Si no encuentra ninguno de los anteriores, usa el primero disponible
-        return available_models[0] if available_models else None
-    except Exception as e:
-        st.error(f"Error al listar modelos: {e}")
-        return None
+# Usamos el nombre directo que sabemos que te funciona
+model_gemini = genai.GenerativeModel('gemini-1.5-flash')
 
-target_model = get_working_model()
-
-# --- 4. INTERFAZ ---
 brand = st.sidebar.text_input("Marca:", "Istobal")
-prompt_user = st.sidebar.text_area("Pregunta:", "¿Quién fabrica los mejores puentes de lavado?")
+prompt_input = st.sidebar.text_area("Introduce tu pregunta:")
 
-if st.button("🚀 Ejecutar Análisis"):
-    if not target_model:
-        st.error("No se encontró ningún modelo de Gemini disponible para tu API Key.")
+if st.button("🚀 Analizar"):
+    if not prompt_input:
+        st.error("Escribe una pregunta.")
     else:
-        st.info(f"Usando modelo: {target_model}")
-        
-        # --- CONSULTA OPENAI ---
+        # 1. Obtener respuesta de GPT
         try:
             res_gpt = client_gpt.chat.completions.create(
                 model="gpt-4o",
-                messages=[{"role": "user", "content": prompt_user}]
+                messages=[{"role": "user", "content": prompt_input}]
             ).choices[0].message.content
-            st.subheader("Respuesta ChatGPT")
-            st.write(res_gpt)
         except Exception as e:
-            st.error(f"Error OpenAI: {e}")
+            res_gpt = f"Error GPT: {e}"
 
-        # --- CONSULTA GEMINI ---
+        # 2. Pequeña pausa de 2 segundos (vital para evitar el 429)
+        time.sleep(2)
+
+        # 3. Obtener respuesta de Gemini
         try:
-            model = genai.GenerativeModel(target_model)
-            response = model.generate_content(prompt_user)
-            st.subheader("Respuesta Gemini")
-            st.write(response.text)
+            response = model_gemini.generate_content(prompt_input)
+            res_gem = response.text
         except Exception as e:
-            if "429" in str(e):
-                st.warning("⚠️ Cuota excedida. Google pide esperar 60 segundos.")
-            else:
-                st.error(f"Error Gemini: {e}")
+            res_gem = f"Error Gemini (Cuota): {e}"
 
-st.divider()
-st.caption(f"Depuración: {target_model if target_model else 'Ningún modelo detectado'}")
+        # 4. CREAR LA TABLA (Solo con los datos de esta consulta)
+        datos = {
+            "Modelo": ["ChatGPT (OpenAI)", "Gemini (Google)"],
+            "Respuesta": [res_gpt, res_gem],
+            "Menciona Marca": [brand.lower() in res_gpt.lower(), brand.lower() in res_gem.lower()]
+        }
+        
+        df = pd.DataFrame(datos)
+        
+        # Mostramos los resultados
+        st.subheader("Comparativa de respuestas")
+        st.table(df) # st.table es más ligero que st.dataframe para evitar errores
+
+        # Opcional: Mostrar las respuestas en grande debajo por si la tabla corta el texto
+        with st.expander("Ver respuestas completas"):
+            st.markdown(f"**ChatGPT:** {res_gpt}")
+            st.divider()
+            st.markdown(f"**Gemini:** {res_gem}")
