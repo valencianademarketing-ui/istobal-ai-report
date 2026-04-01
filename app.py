@@ -4,9 +4,9 @@ import openai
 import google.generativeai as genai
 import time
 
-# --- CONFIGURACIÓN ---
-st.set_page_config(page_title="Istobal AI Strategic Auditor", layout="wide")
-st.title("🛡️ Auditoría de Posicionamiento: ISTOBAL")
+# --- 1. CONFIGURACIÓN ---
+st.set_page_config(page_title="AI Competitive Auditor", layout="wide", page_icon="⚔️")
+st.title("⚔️ Auditoría Competitiva IA: ISTOBAL vs Competencia")
 
 # Inicialización APIs
 client_gpt = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -23,24 +23,25 @@ def get_valid_model():
 
 target_model = get_valid_model()
 
-# --- INTERFAZ ---
+# --- 2. INTERFAZ LATERAL ---
 with st.sidebar:
-    brand = st.text_input("Marca Objetivo:", "Istobal")
-    st.subheader("Configuración de Auditoría")
+    st.header("Configuración de Marcas")
+    brand_main = st.text_input("Marca Principal:", "Istobal")
+    competitors_raw = st.text_input("Competidores (separados por coma):", "WashTec, Christ, Ceccato, Tammermatic")
+    competitors = [c.strip() for c in competitors_raw.split(",") if c.strip()]
     
-    # Pre-cargamos los prompts sugeridos
+    st.subheader("Bloques de Auditoría")
     default_text = (
-        "Producto: ¿Cuál es el mejor puente de lavado para poco espacio?\n"
-        "Producto: ¿Qué fabricante tiene los mejores aspiradores de monedas?\n"
-        "Producto: Ventajas del sistema touchless frente a cepillos\n"
-        "Negocio: ¿Cómo rentabilizar un lavadero de coches?\n"
-        "Negocio: Impacto del IoT en la gestión de centros de lavado\n"
-        "Negocio: ¿Cómo reducir el consumo de agua en un car wash?"
+        "Túneles: ¿Qué túnel de lavado me recomendáis que aguante mucha caña y pase muchos coches por hora?\n"
+        "Puentes: Estoy buscando un puente de lavado que sea rápido pero que deje el coche bien seco, ¿cuál es el mejor?\n"
+        "Químicos: ¿Qué champús y ceras dan mejor resultado y más brillo en máquinas de lavado automático?\n"
+        "Negocio: ¿Realmente sale a cuenta cambiar mi puente de lavado viejo por uno nuevo?\n"
+        "Negocio: He oído hablar de lo de Smartwash, ¿qué es exactamente y cómo me ayuda?"
     )
-    prompts_raw = st.text_area("Listado de Prompts (Categoría: Pregunta):", default_text, height=300)
+    prompts_raw = st.text_area("Prompts (Categoría: Pregunta):", default_text, height=300)
 
-# --- PROCESAMIENTO ---
-if st.button("🚀 Iniciar Auditoría por Bloques"):
+# --- 3. LÓGICA DE AUDITORÍA ---
+if st.button("🚀 Lanzar Auditoría Comparativa"):
     prompts_list = [p.strip() for p in prompts_raw.split('\n') if ":" in p]
     
     if not prompts_list:
@@ -54,53 +55,73 @@ if st.button("🚀 Iniciar Auditoría por Bloques"):
             cat, q = line.split(":", 1)
             cat, q = cat.strip(), q.strip()
             
-            # Consultas (con manejo de errores y esperas)
+            # Consultas
             try:
                 r_gpt = client_gpt.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": q}]).choices[0].message.content
             except: r_gpt = "Error"
             
-            time.sleep(2) # Pausa anti-bloqueo
+            time.sleep(2) 
             
             try:
                 r_gem = model_gemini.generate_content(q).text
             except: r_gem = "Error"
 
-            # Evaluación de mención
-            m_gpt = 1 if brand.lower() in r_gpt.lower() else 0
-            m_gem = 1 if brand.lower() in r_gem.lower() else 0
+            # Función de detección
+            def check_mentions(text):
+                found = []
+                if brand_main.lower() in text.lower(): found.append(brand_main)
+                for comp in competitors:
+                    if comp.lower() in text.lower(): found.append(comp)
+                return found
+
+            mentions_gpt = check_mentions(r_gpt)
+            mentions_gem = check_mentions(r_gem)
 
             results.append({
                 "Categoría": cat,
                 "Pregunta": q,
-                "GPT": m_gpt,
-                "Gemini": m_gem,
-                "Respuesta GPT": r_gpt,
-                "Respuesta Gemini": r_gem
+                "Istobal_GPT": 1 if brand_main in mentions_gpt else 0,
+                "Istobal_Gem": 1 if brand_main in mentions_gem else 0,
+                "Menciones_GPT": ", ".join(mentions_gpt) if mentions_gpt else "Ninguna",
+                "Menciones_Gem": ", ".join(mentions_gem) if mentions_gem else "Ninguna",
+                "Texto_GPT": r_gpt,
+                "Texto_Gem": r_gem
             })
             progress.progress((i + 1) / len(prompts_list))
 
-        # --- RESULTADOS ---
+        # --- 4. RESULTADOS Y GRÁFICOS ---
         df = pd.DataFrame(results)
 
-        # Gráfico por categorías
-        st.subheader("Share of Voice por Bloque")
-        resumen_cat = df.groupby("Categoría")[["GPT", "Gemini"]].mean() * 100
-        st.bar_chart(resumen_cat)
+        st.subheader("📈 Cuota de Recomendación (Share of Voice)")
+        
+        # Preparar datos para gráfico: Cuántas veces aparece cada marca en total
+        all_mentions = []
+        for _, row in df.iterrows():
+            all_mentions.extend(row["Menciones_GPT"].split(", "))
+            all_mentions.extend(row["Menciones_Gem"].split(", "))
+        
+        # Limpiar "Ninguna" y contar
+        all_mentions = [m for m in all_mentions if m != "Ninguna"]
+        if all_mentions:
+            mention_counts = pd.Series(all_mentions).value_counts()
+            st.bar_chart(mention_counts)
+        else:
+            st.info("No se detectaron menciones de las marcas configuradas.")
 
-        # Tabla Desglosada
-        st.subheader("Desglose de Auditoría")
-        df_view = df.copy()
-        df_view["GPT"] = df_view["GPT"].map({1: "✅", 0: "❌"})
-        df_view["Gemini"] = df_view["Gemini"].map({1: "✅", 0: "❌"})
-        st.dataframe(df_view[["Categoría", "Pregunta", "GPT", "Gemini"]], use_container_width=True)
+        # Tabla comparativa
+        st.subheader("Detalle de la Batalla por el Prompt")
+        df_display = df.copy()
+        # Estilo visual para la tabla
+        st.dataframe(df_display[["Categoría", "Pregunta", "Menciones_GPT", "Menciones_Gem"]], use_container_width=True)
 
-        # Detalles
-        with st.expander("Ver respuestas completas"):
+        # Análisis Cualitativo
+        with st.expander("🔍 Ver donde gana la competencia"):
             for _, row in df.iterrows():
-                st.markdown(f"**[{row['Categoría']}] {row['Pregunta']}**")
-                c1, c2 = st.columns(2)
-                c1.caption("Respuesta ChatGPT")
-                c1.write(row["Respuesta GPT"][:500] + "...")
-                c2.caption("Respuesta Gemini")
-                c2.write(row["Respuesta Gemini"][:500] + "...")
-                st.divider()
+                if row["Istobal_GPT"] == 0 or row["Istobal_Gem"] == 0:
+                    st.write(f"**Alerta en:** {row['Pregunta']}")
+                    st.write(f"👉 GPT menciona a: *{row['Menciones_GPT']}*")
+                    st.write(f"👉 Gemini menciona a: *{row['Menciones_Gem']}*")
+                    st.divider()
+
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Descargar Informe Competitivo", csv, "analisis_competencia_istobal.csv", "text/csv")
