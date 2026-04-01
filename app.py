@@ -118,4 +118,4 @@ if st.button("🚀 Iniciar Auditoría"):
         )
 
 st.divider()
-st.caption("Istobal AI Auditor Tool - 2026. Basado en modelos
+st.caption("Istobal AI Auditor Tool - 2026. Basado en modelos GPT-4o y Gemini Flash.")
