@@ -16,7 +16,7 @@ try:
     
     # Configurar modelos
     genai.configure(api_key=GEMINI_API_KEY)
-    model_gemini = genai.GenerativeModel('gemini-pro')
+    model_gemini = genai.GenerativeModel('gemini-pro') 
     client_openai = openai.OpenAI(api_key=OPENAI_API_KEY)
     
 except Exception as e:
