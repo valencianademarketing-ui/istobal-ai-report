@@ -3,52 +3,78 @@ import pandas as pd
 import openai
 import google.generativeai as genai
 
-# ... (Configuración inicial igual) ...
+# --- 1. CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(page_title="Istobal AI Auditor", layout="wide")
+st.title("📊 Monitor de Visibilidad IA: ISTOBAL")
 
-if st.button("🚀 Ejecutar Auditoría"):
-    results = []
-    
-    # --- DETECCIÓN DE MODELO ACTIVO ---
-    # En 2026, intentamos primero los modelos de nueva generación
+# --- 2. CARGA DE CLAVES ---
+if "OPENAI_API_KEY" not in st.secrets or "GEMINI_API_KEY" not in st.secrets:
+    st.error("Configura las claves en los Secrets de Streamlit.")
+    st.stop()
+
+# Inicializar APIs
+client_gpt = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+
+# --- 3. INTERFAZ LATERAL ---
+brand = st.sidebar.text_input("Marca a buscar:", "Istobal")
+prompts_text = st.sidebar.text_area(
+    "Prompts (uno por línea):", 
+    "¿Quién lidera el sector de lavado industrial?\nVentajas de Smartwash Istobal"
+)
+
+# Definir la lista de prompts AQUÍ para evitar el NameError
+prompts = [p.strip() for p in prompts_text.split('\n') if p.strip()]
+
+# --- 4. DETECCIÓN AUTOMÁTICA DE MODELO ---
+@st.cache_resource
+def get_best_model():
     try:
-        modelos_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # Prioridad: 1. Gemini 2.0 (Estable) -> 2. Gemini 1.5 (Legacy) -> 3. El primero que haya
-        if any("gemini-2.0-flash" in m for m in modelos_disponibles):
-            target_model = "gemini-2.0-flash"
-        elif any("gemini-1.5-flash" in m for m in modelos_disponibles):
-            target_model = "gemini-1.5-flash"
-        else:
-            target_model = modelos_disponibles[0] if modelos_disponibles else "gemini-pro"
-            
-        model_gemini = genai.GenerativeModel(target_model)
-        st.success(f"Conectado a Google vía: {target_model}")
-    except Exception as e:
-        st.error(f"No se pudieron listar modelos: {e}")
-        st.stop()
+        modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        if any("gemini-2.0-flash" in m for m in modelos): return "gemini-2.0-flash"
+        if any("gemini-1.5-flash" in m for m in modelos): return "gemini-1.5-flash"
+        return modelos[0] if modelos else "gemini-pro"
+    except:
+        return "gemini-1.5-flash"
 
-    for p in prompts:
-        # --- GPT-4o ---
-        try:
-            res_gpt = client_gpt.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "user", "content": p}]
-            ).choices[0].message.content
-        except Exception as e:
-            res_gpt = f"Error GPT: {e}"
+target_model_name = get_best_model()
+st.sidebar.success(f"Google AI: {target_model_name}")
 
-        # --- GEMINI ---
-        try:
-            # Forzamos el uso de la versión de producción v1 mediante el SDK
-            response = model_gemini.generate_content(p)
-            res_gem = response.text
-        except Exception as e:
-            res_gem = f"Error Gemini ({target_model}): {e}"
+# --- 5. EJECUCIÓN ---
+if st.button("🚀 Iniciar Auditoría"):
+    if not prompts:
+        st.warning("Escribe algún prompt.")
+    else:
+        results = []
+        model_gemini = genai.GenerativeModel(target_model_name)
+        
+        bar = st.progress(0)
+        for i, p in enumerate(prompts):
+            # Consulta GPT
+            try:
+                res_gpt = client_gpt.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": p}]
+                ).choices[0].message.content
+            except Exception as e:
+                res_gpt = f"Error GPT: {e}"
 
-        results.append({
-            "Prompt": p,
-            "ChatGPT": res_gpt,
-            "Gemini": res_gem,
-            "Visto": brand.lower() in res_gpt.lower() or brand.lower() in res_gem.lower()
-        })
+            # Consulta Gemini
+            try:
+                response = model_gemini.generate_content(p)
+                res_gem = response.text
+            except Exception as e:
+                res_gem = f"Error Gemini: {e}"
 
-    st.dataframe(pd.DataFrame(results), use_container_width=True)
+            results.append({
+                "Prompt": p,
+                "ChatGPT (OpenAI)": res_gpt,
+                "Gemini (Google)": res_gem,
+                "Menciona Marca": brand.lower() in res_gpt.lower() or brand.lower() in res_gem.lower()
+            })
+            bar.progress((i + 1) / len(prompts))
+
+        # Mostrar resultados
+        df = pd.DataFrame(results)
+        st.subheader("Resultados de Visibilidad")
+        st.dataframe(df, use_container_width=True)
