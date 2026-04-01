@@ -3,21 +3,21 @@ import pandas as pd
 import openai
 import requests
 
-# --- CONFIGURACIÓN DE PÁGINA ---
+# --- 1. CONFIGURACIÓN ---
 st.set_page_config(page_title="Istobal AI Auditor", layout="wide")
-st.title("📊 Monitor de Visibilidad IA: ISTOBALeee")
+st.title("📊 Monitor de Visibilidad IA: ISTOBAL")
 
-# --- SEGURIDAD ---
+# --- 2. SEGURIDAD ---
 if "OPENAI_API_KEY" not in st.secrets or "GEMINI_API_KEY" not in st.secrets:
-    st.error("Error: Configura las API Keys en los Secrets de Streamlit.")
+    st.error("⚠️ Configura las API Keys en los Secrets de Streamlit.")
     st.stop()
 
-# --- INPUTS ---
-brand = st.sidebar.text_input("Marca a buscar:", "Istobal")
+# --- 3. INPUTS ---
+brand = st.sidebar.text_input("Marca:", "Istobal")
 prompts_text = st.sidebar.text_area("Prompts (uno por línea):", "¿Quién es líder en puentes de lavado?")
 prompts = [p.strip() for p in prompts_text.split('\n') if p.strip()]
 
-if st.button("🚀 Ejecutar Análisis"):
+if st.button("🚀 Ejecutar Auditoría"):
     results = []
     client_gpt = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
     
@@ -31,25 +31,29 @@ if st.button("🚀 Ejecutar Análisis"):
         except Exception as e:
             res_gpt = f"Error GPT: {e}"
 
-        # --- BLOQUE GEMINI (NUEVA ESTRATEGIA) ---
-        # Intentamos el modelo flash con la versión v1 (producción)
+        # --- BLOQUE GEMINI (AJUSTE FINAL 2026) ---
         try:
-            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={st.secrets['GEMINI_API_KEY']}"
+            # Usamos el nombre de modelo exacto para la API gratuita actual
+            # Probamos con 'gemini-1.5-flash-latest' que es el alias más compatible
+            model_id = "gemini-1.5-flash-latest"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={st.secrets['GEMINI_API_KEY']}"
+            
             payload = {"contents": [{"parts": [{"text": p}]}]}
             headers = {'Content-Type': 'application/json'}
             
             response = requests.post(url, json=payload, headers=headers)
+            res_data = response.json()
             
             if response.status_code == 200:
-                res_gem = response.json()['candidates'][0]['content']['parts'][0]['text']
+                res_gem = res_data['candidates'][0]['content']['parts'][0]['text']
             else:
-                # Si falla el 1.5-flash, intentamos el pro 1.0 como último recurso
-                url_alt = url.replace("gemini-1.5-flash", "gemini-pro")
+                # Si el 'flash-latest' falla, intentamos el 'gemini-1.5-flash' a secas
+                url_alt = url.replace("gemini-1.5-flash-latest", "gemini-1.5-flash")
                 response_alt = requests.post(url_alt, json=payload, headers=headers)
                 if response_alt.status_code == 200:
                     res_gem = response_alt.json()['candidates'][0]['content']['parts'][0]['text']
                 else:
-                    res_gem = f"Error Crítico Google: {response_alt.text}"
+                    res_gem = f"Error Google {response_alt.status_code}: {response_alt.text}"
         except Exception as e:
             res_gem = f"Error de red: {e}"
 
@@ -57,7 +61,7 @@ if st.button("🚀 Ejecutar Análisis"):
             "Prompt": p,
             "ChatGPT": res_gpt,
             "Gemini": res_gem,
-            "Menciona Istobal": brand.lower() in res_gpt.lower() or brand.lower() in res_gem.lower()
+            "Presencia Marca": brand.lower() in res_gpt.lower() or brand.lower() in res_gem.lower()
         })
 
     st.dataframe(pd.DataFrame(results), use_container_width=True)
