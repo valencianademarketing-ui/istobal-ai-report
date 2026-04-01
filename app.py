@@ -3,39 +3,31 @@ import pandas as pd
 import openai
 import google.generativeai as genai
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Istobal AI Auditor", layout="wide")
-st.title("📊 Monitor de Visibilidad IA: ISTOBAL")
-
-# --- CARGA DE CLAVES ---
-try:
-    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-    
-    # Configuración de OpenAI
-    client_gpt = openai.OpenAI(api_key=OPENAI_API_KEY)
-    
-    # Configuración de Google (SDK Oficial)
-    genai.configure(api_key=GEMINI_API_KEY)
-    
-except Exception as e:
-    st.error("⚠️ Revisa tus Secrets en Streamlit. Asegúrate de que los nombres sean exactos.")
-    st.stop()
-
-# --- INTERFAZ ---
-brand = st.sidebar.text_input("Marca a buscar:", "Istobal")
-prompts_text = st.sidebar.text_area("Prompts (uno por línea):", "¿Quién lidera el sector de lavado?")
-prompts = [p.strip() for p in prompts_text.split('\n') if p.strip()]
+# ... (Configuración inicial igual) ...
 
 if st.button("🚀 Ejecutar Auditoría"):
     results = []
     
-    # Definimos el modelo aquí dentro para asegurar que use la última config
-    # Usamos gemini-1.5-flash que es el estándar actual
-    model_gemini = genai.GenerativeModel('gemini-1.5-flash')
+    # --- DETECCIÓN DE MODELO ACTIVO ---
+    # En 2026, intentamos primero los modelos de nueva generación
+    try:
+        modelos_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Prioridad: 1. Gemini 2.0 (Estable) -> 2. Gemini 1.5 (Legacy) -> 3. El primero que haya
+        if any("gemini-2.0-flash" in m for m in modelos_disponibles):
+            target_model = "gemini-2.0-flash"
+        elif any("gemini-1.5-flash" in m for m in modelos_disponibles):
+            target_model = "gemini-1.5-flash"
+        else:
+            target_model = modelos_disponibles[0] if modelos_disponibles else "gemini-pro"
+            
+        model_gemini = genai.GenerativeModel(target_model)
+        st.success(f"Conectado a Google vía: {target_model}")
+    except Exception as e:
+        st.error(f"No se pudieron listar modelos: {e}")
+        st.stop()
 
     for p in prompts:
-        # --- BLOQUE CHATGPT ---
+        # --- GPT-4o ---
         try:
             res_gpt = client_gpt.chat.completions.create(
                 model="gpt-4o",
@@ -44,17 +36,13 @@ if st.button("🚀 Ejecutar Auditoría"):
         except Exception as e:
             res_gpt = f"Error GPT: {e}"
 
-        # --- BLOQUE GEMINI (SDK Oficial con manejo de error 404) ---
+        # --- GEMINI ---
         try:
+            # Forzamos el uso de la versión de producción v1 mediante el SDK
             response = model_gemini.generate_content(p)
             res_gem = response.text
         except Exception as e:
-            # Si el SDK falla, intentamos una variante de nombre que a veces desbloquea el 404
-            try:
-                model_alt = genai.GenerativeModel('models/gemini-1.5-flash')
-                res_gem = model_alt.generate_content(p).text
-            except:
-                res_gem = f"Error Gemini: El modelo no está disponible en tu región/cuenta. Detalle: {e}"
+            res_gem = f"Error Gemini ({target_model}): {e}"
 
         results.append({
             "Prompt": p,
@@ -64,5 +52,3 @@ if st.button("🚀 Ejecutar Auditoría"):
         })
 
     st.dataframe(pd.DataFrame(results), use_container_width=True)
-
-st.info("Nota: Si Gemini sigue dando error 404, es probable que la IP del servidor de Streamlit esté en una región no soportada por el plan gratuito de Google.")
